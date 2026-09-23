@@ -16,11 +16,11 @@ const PSY = PowerSystems
 
 const BASE_DIR = joinpath(@__DIR__, "..")
 const DATA_DIR = joinpath(BASE_DIR, "data")
-const CASE_DIR = joinpath(BASE_DIR, "CATS_openapi")
+const CASE_FILE = joinpath(BASE_DIR, "CATS_openapi.sns")
 
-if !isfile(joinpath(CASE_DIR, "system.json"))
+if !isfile(CASE_FILE)
     error(
-        "no case at $CASE_DIR. Build it first: julia --project=build build/build_CATS.jl",
+        "no case at $CASE_FILE. Build it first: julia --project=build build/build_CATS.jl",
     )
 end
 
@@ -33,8 +33,8 @@ const HYDRO_UNITS = read_data("hydro_units.csv")
 const RESERVOIRS = read_data("hydro_reservoirs.csv")
 const REACTIVE = read_data("reactive_resources.csv")
 
-@info "Reading $CASE_DIR"
-const SYS = @time from_file(System, CASE_DIR)
+@info "Reading $CASE_FILE"
+const SYS = @time from_file(CASE_FILE)
 
 count_of(T) = length(collect(get_components(T, SYS)))
 
@@ -67,7 +67,7 @@ count_of(T) = length(collect(get_components(T, SYS)))
         for row in eachrow(PRIME_MOVERS)
             component = get_component(StaticInjection, SYS, row.new_name)
             isnothing(component) && continue
-            expected = PrimeMovers(String(row.eia_pm))
+            expected = PrimeMovers.Value(row.eia_pm)
             if get_prime_mover_type(component) != expected
                 push!(mismatched, row.new_name)
             end

@@ -6,7 +6,7 @@
 # repository, in the campaign folder's Archive/psi-simulation/.
 #
 # Run from the repository root (Sienna/ holds this model's environment; the case
-# lives in ../CATS_openapi, built by build/build_CATS.jl):
+# lives in ../CATS_openapi.sns, built by build/build_CATS.jl):
 #   julia --project=Sienna Sienna/cats_model.jl
 # Size it via CATS_N_GATES, CATS_N_MONITORED, CATS_PTDF_TOL, CATS_SOLVER_PARALLEL,
 # CATS_SOLVER_ALGORITHM, CATS_SOLVER_LOG.
@@ -33,7 +33,7 @@ const PFS = PowerFlows
 # -----------------------------------------------------------------------------
 # 1. Configuration.
 # -----------------------------------------------------------------------------
-const CASE_DIR = joinpath(@__DIR__, "..", "CATS_openapi")
+const CASE_FILE = joinpath(@__DIR__, "..", "CATS_openapi.sns")
 const HORIZON = Hour(2)
 # Required even though nothing steps: `auto_transform_time_series!` converts the
 # SingleTimeSeries to a Deterministic forecast only when BOTH horizon and interval are
@@ -74,7 +74,7 @@ mkpath(CSV_DIR)
 # -----------------------------------------------------------------------------
 # 2. Load the system.
 # -----------------------------------------------------------------------------
-sys = PSY.from_file(PSY.System, CASE_DIR)
+sys = PSY.from_file(CASE_FILE)
 
 # Read timestamps from the SingleTimeSeries rather than `get_forecast_initial_times`:
 # no forecast exists yet, because the conversion happens inside `DecisionModel`.
