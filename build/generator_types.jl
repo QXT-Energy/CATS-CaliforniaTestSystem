@@ -4,7 +4,7 @@
 # column) get their prime mover from that lookup instead. This dict now only ever gets
 # consulted for the 1769 EIA-unmatched rows -- synchronous condensers and imports -- both
 # of which map to OT and are dropped by maybe_add_prime_mover_type! regardless.
-const PM_TYPE_DICT = Dict{String, PSY.PrimeMovers}(
+const PM_TYPE_DICT = Dict{String, PSY.PrimeMovers.Value}(
     "Conventional Hydroelectric" => PrimeMovers.HA,
     "Hydroelectric Pumped Storage" => PrimeMovers.HY,
 

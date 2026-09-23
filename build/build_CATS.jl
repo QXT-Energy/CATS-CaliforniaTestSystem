@@ -51,17 +51,17 @@ additional_fields(::Type{Source}) = Dict{Symbol, Any}(
 additional_fields(::Type{EnergyReservoirStorage}) = Dict{Symbol, Any}(
     :storage_technology_type => StorageTech.LIB,
     :storage_capacity => 0.0,
-    :storage_level_limits => (0.0, 1.0),
+    :storage_level_limits => (min = 0.0, max = 1.0),
     :initial_storage_capacity_level => 0.0,
-    :input_active_power_limits => (0.0, 0.0),
-    :output_active_power_limits => (0.0, 0.0),
-    :efficiency => (1.0, 1.0),
+    :input_active_power_limits => (min = 0.0, max = 0.0),
+    :output_active_power_limits => (min = 0.0, max = 0.0),
+    :efficiency => (in = 1.0, out = 1.0),
 )
 
 # most things have a prime mover type...
 function maybe_add_prime_mover_type!(
     d::Dict{Symbol, Any},
-    pm_type::PSY.PrimeMovers,
+    pm_type::PSY.PrimeMovers.Value,
     ::Type{<:StaticInjection}
 )
     d[:prime_mover_type] = pm_type
@@ -70,21 +70,22 @@ end
 # ...except for imports and SCs.
 maybe_add_prime_mover_type!(
     ::Dict{Symbol, Any},
-    ::PSY.PrimeMovers,
+    ::PSY.PrimeMovers.Value,
     ::Type{<:Union{Source, SynchronousCondenser}}
 ) = nothing
 
 """
 A somewhat hacky way of converting a ThermalStandard generator to another type of generator.
 """
-function try_convert(T::Type{<:StaticInjection}, gen::ThermalStandard, pm_type::PSY.PrimeMovers)
+function try_convert(T::Type{<:StaticInjection}, gen::ThermalStandard, pm_type::PSY.PrimeMovers.Value)
     commonKeys = intersect(fieldnames(ThermalStandard), fieldnames(T))
     old_data = Dict(key=>getfield(gen, key) for key ∈ commonKeys)
     delete!.((old_data,), (:operation_cost, :internal, :prime_mover_type))
     maybe_add_prime_mover_type!(old_data, pm_type, T)
     return T(;
         old_data...,
-        additional_fields(T)...
+        additional_fields(T)...,
+        input_basis = PSY.CU
     )
 end
 
@@ -103,7 +104,7 @@ function rename_generator!(system::System, gen::ThermalStandard, new_name::Abstr
     delete!(old_data, :internal)
     old_data[:name] = new_name
     remove_component!(system, gen)
-    renamed = ThermalStandard(; old_data...)
+    renamed = ThermalStandard(; old_data..., input_basis = PSY.CU)
     add_component!(system, renamed)
     return renamed
 end
@@ -143,13 +144,13 @@ neither HydroTurbine nor HydroPumpTurbine is meaningful without one.
 function promote_hydro(
     T::Type{<:Union{HydroTurbine, HydroPumpTurbine}},
     gen::HydroDispatch,
-    pm_type::PSY.PrimeMovers,
+    pm_type::PSY.PrimeMovers.Value,
 )
     common_keys = intersect(fieldnames(HydroDispatch), fieldnames(T))
     old_data = Dict(key => getfield(gen, key) for key in common_keys)
     delete!.((old_data,), (:internal, :prime_mover_type, :status, :time_at_status))
     old_data[:prime_mover_type] = pm_type
-    return T(; old_data..., _extra_hydro_fields(T, gen)...)
+    return T(; old_data..., _extra_hydro_fields(T, gen)..., input_basis = PSY.CU)
 end
 
 function hydro_target_type(target_type::AbstractString)
@@ -180,10 +181,7 @@ function promote_hydro_units!(system::System, hydro_df::DataFrame)
             "no HydroDispatch by that name exists in the system.",
         )
         T = hydro_target_type(row.target_type)
-        # String(...): the enum's own String constructor requires a concrete String, not
-        # CSV.jl's InlineStrings short-string types (String3/String7/...) -- verified this
-        # throws a MethodError ("cannot convert ... to Int64") without the conversion.
-        pm_type = PrimeMovers(String(row.eia_pm))
+        pm_type = PrimeMovers.Value(row.eia_pm)
 
         geo_attrs = collect(get_supplemental_attributes(GeographicInfo, gen))
         for geo in geo_attrs
@@ -204,7 +202,7 @@ end
 rule (verified: every one of the 32 real rows carries FRANCIS/PELTON/KAPLAN) -- read it
 directly rather than recomputing it here, so there is exactly one place that rule lives."""
 apply_turbine_type!(turbine::HydroTurbine, turbine_type::AbstractString) =
-    set_turbine_type!(turbine, HydroTurbineType(String(turbine_type)))
+    set_turbine_type!(turbine, HydroTurbineType.Value(turbine_type))
 
 """HydroPumpTurbine has no `turbine_type` field (verified in
 PowerSystems.jl/src/models/generated/HydroPumpTurbine.jl): the design's head-band assignment
@@ -288,7 +286,7 @@ where this happens, so the substitution is visible rather than silently picked.
 """
 function resolve_cc_configurations(plants_df::DataFrame)
     cc_rows = plants_df[plants_df.plant_type .== "CombinedCycleBlock", :]
-    resolved = Dict{Tuple{Int, Int}, CombinedCycleConfiguration}()
+    resolved = Dict{Tuple{Int, Int}, CombinedCycleConfiguration.Value}()
     for block_rows in groupby(cc_rows, [:PlantCode, :group_index])
         plant_code = block_rows.PlantCode[1]
         group_index = block_rows.group_index[1]
@@ -303,7 +301,7 @@ function resolve_cc_configurations(plants_df::DataFrame)
                 "cc_configuration values in generator_plants.csv ($counts); using " *
                 "\"$chosen\" (the most common)"
         end
-        resolved[(plant_code, group_index)] = CombinedCycleConfiguration(String(chosen))
+        resolved[(plant_code, group_index)] = CombinedCycleConfiguration.Value(chosen)
     end
     return resolved
 end
@@ -808,6 +806,7 @@ function add_caiso_reactive_resources!(system::System)
                     reactive_power_limits = (min = -1.0, max = 1.0),
                     base_power = mvar,
                     active_power_losses = 0.0,
+                    input_basis = PSY.CU,
                 ))
                 condensers += 1
                 condenser_mvar += mvar
@@ -870,10 +869,8 @@ function build_CATS_system(;
     reservoirs_df = CSV.read(reservoirs_file, DataFrame)
 
     row_to_new_name = Dict{Int, String}(row.row_index => row.new_name for row in eachrow(names_df))
-    # String(...): PrimeMovers' String constructor requires a concrete String, not CSV.jl's
-    # InlineStrings short-string types (String3/String7/...) that eia_pm is read as.
-    row_to_eia_pm = Dict{Int, PSY.PrimeMovers}(
-        row.row_index => PrimeMovers(String(row.eia_pm)) for row in eachrow(prime_movers_df)
+    row_to_eia_pm = Dict{Int, PSY.PrimeMovers.Value}(
+        row.row_index => PrimeMovers.Value(row.eia_pm) for row in eachrow(prime_movers_df)
     )
 
     # STEP 2's per-column time series filter needs to identify solar units by their original
@@ -1437,4 +1434,4 @@ function build_CATS_system(;
 end
 
 system = build_CATS_system()
-to_file(system, joinpath(BASE_DIR, "CATS_openapi"); power_units = :component_base, force = true)
+to_file(system, joinpath(BASE_DIR, "CATS_openapi.sns"); force = true)
