@@ -23,7 +23,7 @@ data/*
 !data/hydro_inflow_2019_daily.csv
 
 # Generated build artifacts (from build/build_CATS.jl)
-/CATS_openapi/
+/CATS_openapi.sns
 
 # Model run artifacts (from Sienna/cats_model.jl)
 /Sienna/results/
@@ -39,3 +39,6 @@ data/*
 
 # Python validator virtualenv
 /Python/.venv/
+CATS_openapi
+*.log
+Manifest.toml
