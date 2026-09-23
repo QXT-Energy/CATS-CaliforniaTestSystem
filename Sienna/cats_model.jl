@@ -43,8 +43,8 @@ const START_HOUR = 17               # evening peak, not off-peak midnight
 const MIP_GAP = 0.01
 const SOLVER_TIME_LIMIT_S = 600.0
 const SOLVER_THREADS = 18
-const SOLVER_PARALLEL = get(ENV, "CATS_SOLVER_PARALLEL", "on")       # "choose" | "on" | "off"
-const SOLVER_ALGORITHM = get(ENV, "CATS_SOLVER_ALGORITHM", "hipo")   # "choose" | "simplex" | "hipo" | "ipm"
+const SOLVER_PARALLEL = get(ENV, "CATS_SOLVER_PARALLEL", "off")       # "choose" | "on" | "off"
+const SOLVER_ALGORITHM = get(ENV, "CATS_SOLVER_ALGORITHM", "choose")   # "choose" | "simplex" | "hipo" | "ipm"
 
 # Sparsification tolerance for the PTDF rows (absolute cutoff on a
 # distribution-factor coefficient). Smaller = more accurate, denser rows. The MODF
@@ -255,10 +255,6 @@ solver = JuMP.optimizer_with_attributes(
     # root + node LP relaxations inside branch-and-bound, which is what actually runs
     # repeatedly for a MIP like this UC problem.
     "mip_lp_solver" => SOLVER_ALGORITHM,
-    # HiGHS has no Gurobi-style MIPFocus. The intent of MIPFocus=1 (find feasible
-    # integer incumbents quickly — the dual LP needs a feasible commitment) maps to
-    # raising the heuristic effort (default 0.05).
-    "mip_heuristic_effort" => 0.5,
 )
 
 model = POM.DecisionModel(

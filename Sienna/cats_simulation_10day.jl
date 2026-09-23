@@ -38,7 +38,7 @@ const PFS = PowerFlows
 # -----------------------------------------------------------------------------
 # 1. Configuration.
 # -----------------------------------------------------------------------------
-const CASE_DIR = joinpath(@__DIR__, "..", "CATS_openapi")
+const CASE_FILE = joinpath(@__DIR__, "..", "CATS_openapi.sns")
 const START_HOUR = parse(Int, get(ENV, "CATS_SIM_START_HOUR", "0"))  # day-ahead cadence
 const STEPS = parse(Int, get(ENV, "CATS_SIM_STEPS", "10"))
 const HORIZON = Hour(parse(Int, get(ENV, "CATS_SIM_HORIZON_HOURS", "24")))
@@ -46,8 +46,8 @@ const INTERVAL = Hour(parse(Int, get(ENV, "CATS_SIM_INTERVAL_HOURS", "24")))
 const MIP_GAP = 0.01
 const SOLVER_TIME_LIMIT_S = 600.0
 const SOLVER_THREADS = 18
-const SOLVER_PARALLEL = get(ENV, "CATS_SOLVER_PARALLEL", "on")       # "choose" | "on" | "off"
-const SOLVER_ALGORITHM = get(ENV, "CATS_SOLVER_ALGORITHM", "hipo")   # "choose" | "simplex" | "hipo" | "ipm"
+const SOLVER_PARALLEL = get(ENV, "CATS_SOLVER_PARALLEL", "choose")       # "choose" | "on" | "off"
+const SOLVER_ALGORITHM = get(ENV, "CATS_SOLVER_ALGORITHM", "choose")   # "choose" | "simplex" | "hipo" | "ipm"
 
 # Sparsification tolerance for the PTDF rows (absolute cutoff on a
 # distribution-factor coefficient). Smaller = more accurate, denser rows. The MODF
@@ -68,7 +68,7 @@ mkpath(SIM_ROOT)
 # -----------------------------------------------------------------------------
 # 2. Load the system.
 # -----------------------------------------------------------------------------
-sys = PSY.from_file(PSY.System, CASE_DIR)
+sys = PSY.from_file(CASE_FILE)
 
 # Read timestamps from the SingleTimeSeries rather than `get_forecast_initial_times`:
 # no forecast exists yet, because the conversion happens inside `DecisionModel`.
