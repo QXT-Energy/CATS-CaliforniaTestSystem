@@ -20,11 +20,11 @@ const PFP = PowerFlowFileParser
 const POAM = PowerOpenAPIModels
 
 # psy6 dropped `scaling_factor_multiplier`: a normalized series now *declares* itself instead
-# of naming a getter the consumer must resolve. `unit_system = DU` says the values are per unit
+# of naming a getter the consumer must resolve. `unit_system = CU` says the values are per unit
 # on the component's own base; `quantity_kind` names what they scale to. `units` stays nothing
 # because a per-unit basis is not a units label. Mirrors PowerSystemCaseBuilder's `per_unit_of`.
 per_unit_of(quantity_kind::AbstractString) =
-    (unit_system = PSY.DU, units = nothing, quantity_kind = quantity_kind)
+    (unit_system = PSY.CU, units = nothing, quantity_kind = quantity_kind)
 
 include(joinpath(@__DIR__, "parse_matpower.jl"))
 include(joinpath(@__DIR__, "generator_types.jl"))
@@ -421,7 +421,11 @@ attach_cost!(gen::EnergyReservoirStorage, ::Nothing) =
     set_operation_cost!(gen, StorageCost())
 
 # Tag every field of a MinMax/UpDown NamedTuple as natural units for the psy6 setters.
-_mw(nt::NamedTuple) = map(x -> x * PSY.MW, nt)
+_mw(nt::NamedTuple) = map(x -> x * u"MW", nt)
+
+# Ramp limits carry MW per minute, not MW: the setter's unit category is `MW minute⁻¹`
+# and rejects a bare-power tag.
+_mw_per_min(nt::NamedTuple) = map(x -> x * u"MW/minute", nt)
 
 function convert_to_battery(system::System,
     gen::StaticInjection,
@@ -433,9 +437,9 @@ function convert_to_battery(system::System,
     add_component!(system, battery_gen)
     rating = get_rating(battery_gen, PSY.NU)
     set_base_power!(battery_gen, rating*k_p) # set base power to k_p * rating, so that active power limits are (0, rating)
-    set_rating!(battery_gen, 1.0 * PSY.DU) # rescale rating to 1.0 of the new device base.
-    set_storage_capacity!(battery_gen, k_e * PSY.DU) # k_e is hours of duration at rated power
-    set_active_power!(battery_gen, 0.0 * PSY.MW)
+    set_rating!(battery_gen, 1.0 * PSY.CU) # rescale rating to 1.0 of the new device base.
+    set_storage_capacity!(battery_gen, k_e * PSY.CU) # k_e is hours of duration at rated power
+    set_active_power!(battery_gen, 0.0 * u"MW")
     set_initial_storage_capacity_level!(battery_gen, 0.0)
     p_max = 0.98 * rating * k_p
     p_limits = _mw((min = 0.0, max = p_max))
@@ -444,15 +448,15 @@ function convert_to_battery(system::System,
     η = _draw_storage_efficiency()
     set_efficiency!(battery_gen, (in = η, out = η))
     q_limits = _mw((min = -p_max, max = p_max))
-    set_reactive_power!(battery_gen, 0.0 * PSY.MW)
+    set_reactive_power!(battery_gen, 0.0 * u"MW")
     set_reactive_power_limits!(battery_gen, q_limits)
 end
 
 # RAMP_LIMIT_DICT holds WECC fractions of device capacity per minute. Ramps are assigned
 # before rebase_base_power!, while base_power is still the MATPOWER system base (100 MVA)
-# for every generator, so tagging those fractions DU would resolve them against 100 MVA and
+# for every generator, so tagging those fractions CU would resolve them against 100 MVA and
 # give every unit the same absolute MW/min. Scale by the unit's own Pmax instead.
-_ramp_mw(fraction::NamedTuple, max_power::Float64) = _mw(map(x -> x * max_power, fraction))
+_ramp_mw(fraction::NamedTuple, max_power::Float64) = _mw_per_min(map(x -> x * max_power, fraction))
 
 """
 MATPOWER gives every generator the same base_power (the system's baseMVA), so `rating`
@@ -473,12 +477,12 @@ function rebase_base_power!(gen::Union{ThermalStandard, HydroDispatch})
     new_base_power = sqrt(p_limits.max^2 + q_max^2)
 
     set_base_power!(gen, new_base_power)
-    set_rating!(gen, new_base_power * PSY.MW)
-    set_active_power!(gen, active_power * PSY.MW)
-    set_reactive_power!(gen, reactive_power * PSY.MW)
+    set_rating!(gen, new_base_power * u"MW")
+    set_active_power!(gen, active_power * u"MW")
+    set_reactive_power!(gen, reactive_power * u"MW")
     set_active_power_limits!(gen, _mw(p_limits))
     isnothing(q_limits) || set_reactive_power_limits!(gen, _mw(q_limits))
-    isnothing(ramp_limits) || set_ramp_limits!(gen, _mw(ramp_limits))
+    isnothing(ramp_limits) || set_ramp_limits!(gen, _mw_per_min(ramp_limits))
 end
 
 function rebase_base_power!(gen::RenewableDispatch)
@@ -488,9 +492,9 @@ function rebase_base_power!(gen::RenewableDispatch)
     new_base_power = get_rating(gen, PSY.NU)
 
     set_base_power!(gen, new_base_power)
-    set_rating!(gen, new_base_power * PSY.MW)
-    set_active_power!(gen, active_power * PSY.MW)
-    set_reactive_power!(gen, reactive_power * PSY.MW)
+    set_rating!(gen, new_base_power * u"MW")
+    set_active_power!(gen, active_power * u"MW")
+    set_reactive_power!(gen, reactive_power * u"MW")
     isnothing(q_limits) || set_reactive_power_limits!(gen, _mw(q_limits))
 end
 
@@ -501,10 +505,10 @@ function rebase_base_power!(gen::SynchronousCondenser)
     new_base_power = get_rating(gen, PSY.NU)
 
     set_base_power!(gen, new_base_power)
-    set_rating!(gen, new_base_power * PSY.MW)
-    set_reactive_power!(gen, reactive_power * PSY.MW)
+    set_rating!(gen, new_base_power * u"MW")
+    set_reactive_power!(gen, reactive_power * u"MW")
     isnothing(q_limits) || set_reactive_power_limits!(gen, _mw(q_limits))
-    set_active_power_losses!(gen, losses * PSY.MW)
+    set_active_power_losses!(gen, losses * u"MW")
 end
 
 function rebase_base_power!(gen::Source)
@@ -516,8 +520,8 @@ function rebase_base_power!(gen::Source)
     new_base_power = sqrt(max(abs(p_limits.min), abs(p_limits.max))^2 + q_max^2)
 
     set_base_power!(gen, new_base_power)
-    set_active_power!(gen, active_power * PSY.MW)
-    set_reactive_power!(gen, reactive_power * PSY.MW)
+    set_active_power!(gen, active_power * u"MW")
+    set_reactive_power!(gen, reactive_power * u"MW")
     set_active_power_limits!(gen, _mw(p_limits))
     isnothing(q_limits) || set_reactive_power_limits!(gen, _mw(q_limits))
 end
@@ -756,7 +760,7 @@ end
 function add_caiso_reactive_resources!(system::System)
     curtailed = 0
     for condenser in get_components(SynchronousCondenser, system)
-        set_rating!(condenser, CURTAILED_CONDENSER_MVAR * PSY.MW)
+        set_rating!(condenser, CURTAILED_CONDENSER_MVAR * u"MW")
         set_reactive_power_limits!(
             condenser,
             _mw((min = -CURTAILED_CONDENSER_MVAR, max = CURTAILED_CONDENSER_MVAR)),
@@ -1272,7 +1276,7 @@ function build_CATS_system(;
                 if max_power > current_max
                     increased += 1
                     most_increase = max(most_increase, max_power / current_max)
-                    set_max_fn!(load, max_power * PSY.MW)
+                    set_max_fn!(load, max_power * u"MW")
                     current_max = max_power
                 end
                 # PSI prefers values to be between 0 and 1.
